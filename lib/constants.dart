@@ -9,6 +9,9 @@ const URL_COMMENTS = '$URL_WP_BASE/comments';
 const URL_MEDIA = '$URL_WP_BASE/media';
 const URL_PAGES = '$URL_WP_BASE/pages';
 const URL_POSTS = '$URL_WP_BASE/posts';
+//added code
+const URL_ARTICLES = '$URL_WP_BASE/articles';
+//end
 const URL_TAGS = '$URL_WP_BASE/tags';
 const URL_USERS = '$URL_WP_BASE/users';
 const URL_USER_ME = '$URL_WP_BASE/users/me';

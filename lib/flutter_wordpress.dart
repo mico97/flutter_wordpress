@@ -33,6 +33,9 @@ import 'schemas/jwt_response.dart';
 import 'schemas/media.dart';
 import 'schemas/page.dart';
 import 'schemas/post.dart';
+//added code
+import 'schemas/articles.dart';
+//
 import 'schemas/tag.dart';
 import 'schemas/user.dart';
 import 'schemas/wordpress_error.dart';
@@ -43,6 +46,9 @@ export 'requests/params_comment_list.dart';
 export 'requests/params_media_list.dart';
 export 'requests/params_page_list.dart';
 export 'requests/params_post_list.dart';
+//added code
+export 'requests/params_articles_list.dart';
+//
 export 'requests/params_tag_list.dart';
 export 'requests/params_user_list.dart';
 export 'schemas/avatar_urls.dart';
@@ -59,6 +65,9 @@ export 'schemas/links.dart';
 export 'schemas/media.dart';
 export 'schemas/page.dart';
 export 'schemas/post.dart';
+//added code
+export 'schemas/articles.dart';
+//
 export 'schemas/settings.dart';
 export 'schemas/tag.dart';
 export 'schemas/title.dart';
@@ -319,6 +328,170 @@ class WordPress {
       }
     }
   }
+
+  // ADDED FUNCTIONS
+  //----------------------------------------------------------------------------------------------------------------------------------------------
+  //----------------------------------------------------------------------------------------------------------------------------------------------
+
+  async.Future<List<Articles>> fetchArticles({
+    @required ParamsArticlesList postParams,
+    bool fetchAuthor = false,
+    bool fetchComments = false,
+    Order orderComments = Order.desc,
+    CommentOrderBy orderCommentsBy = CommentOrderBy.date,
+    bool fetchCategories = false,
+    bool fetchTags = false,
+    bool fetchFeaturedMedia = false,
+    bool fetchAttachments = false,
+    String postType = "posts",
+    bool fetchAll = false
+  }) async {
+    if (fetchAll) {
+      postParams = postParams.copyWith(perPage: 100);
+    }
+
+    final StringBuffer url =
+        new StringBuffer(_baseUrl + URL_WP_BASE + "/" + postType);
+
+    url.write(postParams.toString());
+
+    final response = await http.get(url.toString(), headers: _urlHeader);
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      List<Articles> posts = new List();
+      final list = json.decode(response.body);
+      //note: maybe change final post to articles
+      for (final post in list) {
+        posts.add(await _articlesBuilder(
+          post: Articles.fromJson(post),
+          setAuthor: fetchAuthor,
+          setComments: fetchComments,
+          orderComments: orderComments,
+          orderCommentsBy: orderCommentsBy,
+          setCategories: fetchCategories,
+          setTags: fetchTags,
+          setFeaturedMedia: fetchFeaturedMedia,
+          setAttachments: fetchAttachments,
+        ));
+      }
+
+      if (fetchAll && response.headers["x-wp-totalpages"] != null) {
+        final totalPages = int.parse(response.headers["x-wp-totalpages"]);
+
+        for (int i = postParams.pageNum + 1; i <= totalPages; ++i) {
+            posts.addAll(await fetchArticles(
+              postParams: postParams.copyWith(pageNum: i),
+              fetchAuthor: fetchAuthor,
+              fetchComments: fetchComments,
+              orderComments: orderComments,
+              orderCommentsBy: orderCommentsBy,
+              fetchCategories: fetchCategories,
+              fetchTags: fetchTags,
+              fetchFeaturedMedia: fetchFeaturedMedia,
+              fetchAttachments: fetchAttachments,
+            ));
+          }
+        }
+
+      return posts;
+    } else {
+      try {
+        WordPressError err =
+            WordPressError.fromJson(json.decode(response.body));
+        throw err;
+      } catch (e) {
+        throw new WordPressError(message: response.body);
+      }
+    }
+  }
+
+  Future<Articles> _articlesBuilder({
+    Articles post,
+    bool setAuthor = false,
+    bool setComments = false,
+    Order orderComments = Order.desc,
+    CommentOrderBy orderCommentsBy = CommentOrderBy.date,
+    bool setCategories = false,
+    bool setTags = false,
+    bool setFeaturedMedia = false,
+    bool setAttachments = false,
+  }) async {
+    if (setAuthor) {
+      User author = await fetchUser(id: post.authorID);
+      if (author != null) post.author = author;
+    }
+    if (setComments) {
+      List<Comment> comments = await fetchComments(
+          params: ParamsCommentList(
+        includePostIDs: [post.id],
+        order: orderComments,
+        orderBy: orderCommentsBy,
+      ));
+      if (comments != null && comments.length != 0) {
+        post.comments = comments;
+
+        post.commentsHierarchy = new List();
+        post.comments.forEach((comment) {
+          if (comment.parent == 0)
+            post.commentsHierarchy
+                .add(_commentHierarchyBuilder(post.comments, comment));
+        });
+      }
+    }
+    if (setCategories) {
+      List<Category> categories =
+          await fetchCategories(params: ParamsCategoryList(post: post.id));
+      if (categories != null && categories.length != 0)
+        post.categories = categories;
+    }
+    if (setTags) {
+      List<Tag> tags = await fetchTags(params: ParamsTagList(post: post.id));
+      if (tags != null && tags.length != 0) post.tags = tags;
+    }
+    if (setFeaturedMedia) {
+      List<Media> media = await fetchMediaList(
+        params: ParamsMediaList(
+          includeMediaIDs: [post.featuredMediaID],
+        ),
+      );
+      if (media != null && media.length != 0) post.featuredMedia = media[0];
+    }
+    if (setAttachments) {
+      List<Media> media = await fetchMediaList(
+        params: ParamsMediaList(
+          includeParentIDs: [post.id],
+        ),
+      );
+      if (media != null && media.length != 0) post.attachments = media;
+    }
+    return post;
+  }
+
+  async.Future<Articles> createArticles({@required Articles post}) async {
+    final StringBuffer url = new StringBuffer(_baseUrl + URL_ARTICLES);
+
+    final response = await http.post(
+      url.toString(),
+      headers: _urlHeader,
+      body: post.toJson(),
+    );
+
+    if (response.statusCode >= 200 && response.statusCode < 300) {
+      return Articles.fromJson(json.decode(response.body));
+    } else {
+      try {
+        WordPressError err =
+            WordPressError.fromJson(json.decode(response.body));
+        throw err;
+      } catch (e) {
+        throw new WordPressError(message: response.body);
+      }
+    }
+  }
+
+  //ADDED FUNCTIONS END
+  //----------------------------------------------------------------------------------------------------------------------------------------------
+  //-------------------------------------------------------------------------------------------------------------------------------------------
 
   /// This function fetches post information such as author, comments, categories,
   /// tags, featuredMedia and attachments.
